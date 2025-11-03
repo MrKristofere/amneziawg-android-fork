@@ -32,6 +32,18 @@ jobs:
         cache-disabled: false
         cache-read-only: false
 
+    - name: Update Android SDK versions
+      run: |
+        # Обновляем settings.gradle.kts
+        sed -i 's/compileSdk = 35/compileSdk = 36/g' settings.gradle.kts
+        sed -i 's/buildToolsVersion = "35.0.0"/buildToolsVersion = "36.0.0"/g' settings.gradle.kts
+        
+        # Также обновляем все build.gradle.kts в модулях
+        find . -name "build.gradle.kts" -type f -exec sed -i 's/compileSdk\s*=.*/compileSdk = 36/g' {} \; || true
+        find . -name "build.gradle.kts" -type f -exec sed -i 's/targetSdk\s*=.*/targetSdk = 36/g' {} \; || true
+        
+        echo "✅ Updated compileSdk to 36"
+
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
       
@@ -92,6 +104,7 @@ jobs:
           1. Разрешить установку из неизвестных источников
           2. Удалить предыдущую версию приложения
           3. Установить этот APK
+          
         draft: false
         prerelease: false
       env:
