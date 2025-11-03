@@ -34,22 +34,22 @@ jobs:
 
     - name: Update Android SDK versions
       run: |
-        # Обновляем settings.gradle.kts
         sed -i 's/compileSdk = 35/compileSdk = 36/g' settings.gradle.kts
         sed -i 's/buildToolsVersion = "35.0.0"/buildToolsVersion = "36.0.0"/g' settings.gradle.kts
-        
-        # Также обновляем все build.gradle.kts в модулях
-        find . -name "build.gradle.kts" -type f -exec sed -i 's/compileSdk\s*=.*/compileSdk = 36/g' {} \; || true
-        find . -name "build.gradle.kts" -type f -exec sed -i 's/targetSdk\s*=.*/targetSdk = 36/g' {} \; || true
-        
         echo "✅ Updated compileSdk to 36"
 
     - name: Grant execute permission for gradlew
       run: chmod +x gradlew
-      
+
+    - name: Clean project
+      run: ./gradlew clean
+
+    - name: Diagnostic build
+      run: |
+        ./gradlew :ui:kaptDebugKotlin --stacktrace --info || echo "Debug kapt failed, continuing..."
+
     - name: Build signed release APK
       run: |
-        # Создаем временный keystore для подписи
         keytool -genkeypair \
           -v \
           -keystore temporary.keystore \
@@ -65,14 +65,15 @@ jobs:
           -Pandroid.injected.signing.store.file=$(pwd)/temporary.keystore \
           -Pandroid.injected.signing.store.password=android \
           -Pandroid.injected.signing.key.alias=androidkey \
-          -Pandroid.injected.signing.key.password=android
+          -Pandroid.injected.signing.key.password=android \
+          --stacktrace \
+          --no-daemon
 
     - name: Find and verify APK
       run: |
         echo "🔍 Поиск APK файлов..."
         find . -name "*.apk" -type f -exec ls -la {} \;
         
-        # Ищем release APK
         APK_PATH=$(find . -name "*release*.apk" -type f | head -1)
         if [ -z "$APK_PATH" ]; then
           echo "❌ Release APK не найден!"
@@ -80,12 +81,6 @@ jobs:
         fi
         
         echo "✅ Найден APK: $APK_PATH"
-        
-        # Проверяем подпись APK
-        echo "🔐 Проверка подписи APK..."
-        apksigner verify --verbose "$APK_PATH" || echo "Предупреждение: apksigner не установлен"
-        
-        # Переименовываем
         mv "$APK_PATH" "amneziawg-android-signed.apk"
         echo "📦 APK подготовлен: amneziawg-android-signed.apk"
 
@@ -104,7 +99,6 @@ jobs:
           1. Разрешить установку из неизвестных источников
           2. Удалить предыдущую версию приложения
           3. Установить этот APK
-          
         draft: false
         prerelease: false
       env:
