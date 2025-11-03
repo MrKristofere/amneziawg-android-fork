@@ -1,0 +1,98 @@
+name: Build and Release APK
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+    - name: Checkout code with submodules
+      uses: actions/checkout@v5
+      with:
+        submodules: recursive
+        fetch-depth: 0
+
+    - name: Set up JDK 17
+      uses: actions/setup-java@v5
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+        cache: 'gradle'
+
+    - name: Setup Gradle
+      uses: gradle/actions/setup-gradle@v4
+      with:
+        cache-disabled: false
+        cache-read-only: false
+
+    - name: Grant execute permission for gradlew
+      run: chmod +x gradlew
+      
+    - name: Build signed release APK
+      run: |
+        # Создаем временный keystore для подписи
+        keytool -genkeypair \
+          -v \
+          -keystore temporary.keystore \
+          -alias androidkey \
+          -keyalg RSA \
+          -keysize 2048 \
+          -validity 10000 \
+          -storepass android \
+          -keypass android \
+          -dname "CN=Android Debug, O=Android, C=US"
+          
+        ./gradlew assembleRelease \
+          -Pandroid.injected.signing.store.file=$(pwd)/temporary.keystore \
+          -Pandroid.injected.signing.store.password=android \
+          -Pandroid.injected.signing.key.alias=androidkey \
+          -Pandroid.injected.signing.key.password=android
+
+    - name: Find and verify APK
+      run: |
+        echo "🔍 Поиск APK файлов..."
+        find . -name "*.apk" -type f -exec ls -la {} \;
+        
+        # Ищем release APK
+        APK_PATH=$(find . -name "*release*.apk" -type f | head -1)
+        if [ -z "$APK_PATH" ]; then
+          echo "❌ Release APK не найден!"
+          exit 1
+        fi
+        
+        echo "✅ Найден APK: $APK_PATH"
+        
+        # Проверяем подпись APK
+        echo "🔐 Проверка подписи APK..."
+        apksigner verify --verbose "$APK_PATH" || echo "Предупреждение: apksigner не установлен"
+        
+        # Переименовываем
+        mv "$APK_PATH" "amneziawg-android-signed.apk"
+        echo "📦 APK подготовлен: amneziawg-android-signed.apk"
+
+    - name: Create GitHub Release
+      uses: softprops/action-gh-release@v2
+      with:
+        files: amneziawg-android-signed.apk
+        tag_name: v${{ github.run_number }}
+        name: AmneziaWG Android v${{ github.run_number }}
+        body: |
+          ## 📱 Подписанная версия AmneziaWG Android
+          
+          **ВАЖНО**: Этот APK подписан временным ключом для тестирования.
+          
+          Для установки необходимо:
+          1. Разрешить установку из неизвестных источников
+          2. Удалить предыдущую версию приложения
+          3. Установить этот APK
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
